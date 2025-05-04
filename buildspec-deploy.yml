@@ -1,0 +1,13 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - npm install -g serverless
+      - npm install --save-dev serverless-offline
+      - ls -la  # Debug: list files
+      - cat serverless.yml  # Debug: verify config
+  build:
+    commands:
+      - serverless deploy --verbose

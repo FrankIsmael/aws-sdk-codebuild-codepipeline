@@ -1,0 +1,24 @@
+version: 0.2
+phases:
+  install:
+    runtime-versions:
+      nodejs: 20
+    commands:
+      - npm install -g serverless
+      - npm ci
+      - npm install --save-dev serverless-offline
+  build:
+    commands:
+      # - npm run test
+      - npm run build
+      - serverless package
+artifacts:
+  base-directory: .
+  files:
+    - serverless.yml
+    - package.json
+    - package-lock.json
+    - .build/**/*
+    - src/**/*
+    - .serverless/**/*
+    - node_modules/**/*

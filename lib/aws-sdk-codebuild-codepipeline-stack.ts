@@ -3,7 +3,7 @@ import * as codepipeline from 'aws-cdk-lib/aws-codepipeline';
 import * as codepipeline_actions from 'aws-cdk-lib/aws-codepipeline-actions';
 import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as dotenv from 'dotenv';
-import * as iam from 'aws-cdk-lib/aws-iam'; // Add this import
+import * as iam from 'aws-cdk-lib/aws-iam';
 
 // Load environment variables
 dotenv.config();
@@ -86,40 +86,7 @@ export class PipelineStack extends cdk.Stack {
     // Build stage
     const buildProject = new codebuild.PipelineProject(this, 'BuildProject', {
       role: buildProjectRole,
-      buildSpec: codebuild.BuildSpec.fromObject({
-        version: '0.2',
-        phases: {
-          install: {
-            'runtime-versions': {
-              nodejs: '20',
-            },
-            commands: [
-              'npm install -g serverless',
-              'npm ci',
-              'npm install --save-dev serverless-offline',
-            ],
-          },
-          build: {
-            commands: [
-              // 'npm run test',
-              'npm run build',
-              'serverless package',
-            ],
-          },
-        },
-        artifacts: {
-          'base-directory': '.',
-          files: [
-            'serverless.yml',
-            'package.json',
-            'package-lock.json',
-            '.build/**/*', // Include compiled TypeScript
-            'src/**/*', // Include source files
-            '.serverless/**/*', // Include serverless package artifacts
-            'node_modules/**/*', // Include dependencies
-          ],
-        },
-      }),
+      buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec-build.yml'),
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_6_0,
         environmentVariables: {
@@ -146,25 +113,7 @@ export class PipelineStack extends cdk.Stack {
     // Deploy stage
     const deployProject = new codebuild.PipelineProject(this, 'DeployProject', {
       role: buildProjectRole,
-      buildSpec: codebuild.BuildSpec.fromObject({
-        version: '0.2',
-        phases: {
-          install: {
-            'runtime-versions': {
-              nodejs: '20',
-            },
-            commands: [
-              'npm install -g serverless',
-              'npm install --save-dev serverless-offline',
-              'ls -la', // Debug: list files
-              'cat serverless.yml', // Debug: verify config
-            ],
-          },
-          build: {
-            commands: ['serverless deploy --verbose'],
-          },
-        },
-      }),
+      buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec-deploy.yml'),
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_6_0,
         environmentVariables: {
