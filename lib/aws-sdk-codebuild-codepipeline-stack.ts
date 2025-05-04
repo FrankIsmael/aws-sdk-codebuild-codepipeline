@@ -1,0 +1,189 @@
+import * as cdk from 'aws-cdk-lib';
+import * as codepipeline from 'aws-cdk-lib/aws-codepipeline';
+import * as codepipeline_actions from 'aws-cdk-lib/aws-codepipeline-actions';
+import * as codebuild from 'aws-cdk-lib/aws-codebuild';
+import * as dotenv from 'dotenv';
+import * as iam from 'aws-cdk-lib/aws-iam'; // Add this import
+
+// Load environment variables
+dotenv.config();
+
+export class PipelineStack extends cdk.Stack {
+  constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    // Define the pipeline
+    const pipeline = new codepipeline.Pipeline(this, 'Pipeline', {
+      pipelineName: 'ServerlessPipeline',
+    });
+
+    // Source stage
+    const sourceOutput = new codepipeline.Artifact();
+    const sourceAction = new codepipeline_actions.GitHubSourceAction({
+      actionName: 'GitHub_Source',
+      owner: process.env.GITHUB_OWNER || 'your-github-username',
+      repo: process.env.GITHUB_BACKEND_REPO || 'your-backend-repo',
+      oauthToken: cdk.SecretValue.secretsManager(
+        process.env.GITHUB_TOKEN_SECRET_NAME || 'github-token',
+        {
+          jsonField: 'github-token',
+        }
+      ),
+      trigger: codepipeline_actions.GitHubTrigger.POLL,
+      output: sourceOutput,
+      branch: process.env.GITHUB_BRANCH || 'main',
+    });
+
+    pipeline.addStage({
+      stageName: 'Source',
+      actions: [sourceAction],
+    });
+
+    // Create IAM role with required permissions for serverless
+    const buildProjectRole = new iam.Role(this, 'BuildProjectRole', {
+      assumedBy: new iam.ServicePrincipal('codebuild.amazonaws.com'),
+      description: 'Role used by CodeBuild to execute Serverless deployments',
+    });
+
+    // Add required permissions for Serverless Framework
+    buildProjectRole.addToPolicy(
+      new iam.PolicyStatement({
+        effect: iam.Effect.ALLOW,
+        actions: [
+          'cloudformation:*',
+          's3:*',
+          'logs:*',
+          'iam:PassRole',
+          'iam:GetRole',
+          'iam:CreateRole',
+          'iam:DeleteRole',
+          'iam:PutRolePolicy',
+          'iam:DeleteRolePolicy',
+          'iam:GetRolePolicy',
+          'iam:ListRolePolicies',
+          'iam:ListAttachedRolePolicies',
+          'iam:AttachRolePolicy',
+          'iam:DetachRolePolicy',
+          'iam:PassRole',
+          'iam:TagRole',
+          'iam:UntagRole',
+          'iam:UpdateRole',
+          'iam:UpdateRoleDescription',
+          'iam:UpdateAssumeRolePolicy',
+          'iam:ListRoles',
+          'lambda:*',
+          'apigateway:*',
+          'events:*',
+          'ssm:GetParameter',
+          'ssm:GetParameters',
+          'ssm:GetParametersByPath',
+          'ssm:PutParameter',
+        ],
+        resources: ['*'], // For production, you should restrict this to specific resources
+      })
+    );
+
+    // Build stage
+    const buildProject = new codebuild.PipelineProject(this, 'BuildProject', {
+      role: buildProjectRole,
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: '0.2',
+        phases: {
+          install: {
+            'runtime-versions': {
+              nodejs: '20',
+            },
+            commands: [
+              'npm install -g serverless',
+              'npm ci',
+              'npm install --save-dev serverless-offline',
+            ],
+          },
+          build: {
+            commands: [
+              // 'npm run test',
+              'npm run build',
+              'serverless package',
+            ],
+          },
+        },
+        artifacts: {
+          'base-directory': '.',
+          files: [
+            'serverless.yml',
+            'package.json',
+            'package-lock.json',
+            '.build/**/*', // Include compiled TypeScript
+            'src/**/*', // Include source files
+            '.serverless/**/*', // Include serverless package artifacts
+            'node_modules/**/*', // Include dependencies
+          ],
+        },
+      }),
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.STANDARD_6_0,
+        environmentVariables: {
+          SERVERLESS_ACCESS_KEY: {
+            value: process.env.SERVERLESS_ACCESS_KEY || '',
+          },
+        },
+      },
+    });
+
+    const buildOutput = new codepipeline.Artifact();
+    const buildAction = new codepipeline_actions.CodeBuildAction({
+      actionName: 'Build',
+      project: buildProject,
+      input: sourceOutput,
+      outputs: [buildOutput],
+    });
+
+    pipeline.addStage({
+      stageName: 'Build',
+      actions: [buildAction],
+    });
+
+    // Deploy stage
+    const deployProject = new codebuild.PipelineProject(this, 'DeployProject', {
+      role: buildProjectRole,
+      buildSpec: codebuild.BuildSpec.fromObject({
+        version: '0.2',
+        phases: {
+          install: {
+            'runtime-versions': {
+              nodejs: '20',
+            },
+            commands: [
+              'npm install -g serverless',
+              'npm install --save-dev serverless-offline',
+              'ls -la', // Debug: list files
+              'cat serverless.yml', // Debug: verify config
+            ],
+          },
+          build: {
+            commands: ['serverless deploy --verbose'],
+          },
+        },
+      }),
+      environment: {
+        buildImage: codebuild.LinuxBuildImage.STANDARD_6_0,
+        environmentVariables: {
+          SERVERLESS_ACCESS_KEY: {
+            value: process.env.SERVERLESS_ACCESS_KEY || '',
+          },
+        },
+      },
+    });
+
+    const deployAction = new codepipeline_actions.CodeBuildAction({
+      actionName: 'Deploy',
+      project: deployProject,
+      input: buildOutput,
+    });
+
+    pipeline.addStage({
+      stageName: 'Deploy',
+      actions: [deployAction],
+    });
+  }
+}
