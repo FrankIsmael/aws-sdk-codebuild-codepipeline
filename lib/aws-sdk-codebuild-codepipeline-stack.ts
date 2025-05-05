@@ -29,7 +29,7 @@ export class PipelineStack extends cdk.Stack {
           jsonField: 'github-token',
         }
       ),
-      trigger: codepipeline_actions.GitHubTrigger.POLL,
+      trigger: codepipeline_actions.GitHubTrigger.WEBHOOK,
       output: sourceOutput,
       branch: process.env.GITHUB_BRANCH || 'main',
     });
@@ -86,7 +86,8 @@ export class PipelineStack extends cdk.Stack {
     // Build stage
     const buildProject = new codebuild.PipelineProject(this, 'BuildProject', {
       role: buildProjectRole,
-      buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec-build.yml'),
+      buildSpec: codebuild.BuildSpec.fromAsset('buildspec-build.yml'),
+      // buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec-build.yml'), // from the source repository
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_6_0,
         environmentVariables: {
@@ -113,7 +114,8 @@ export class PipelineStack extends cdk.Stack {
     // Deploy stage
     const deployProject = new codebuild.PipelineProject(this, 'DeployProject', {
       role: buildProjectRole,
-      buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec-deploy.yml'),
+      buildSpec: codebuild.BuildSpec.fromAsset('buildspec-deploy.yml'),
+      // buildSpec: codebuild.BuildSpec.fromSourceFilename('buildspec-deploy.yml'), // from the source repository
       environment: {
         buildImage: codebuild.LinuxBuildImage.STANDARD_6_0,
         environmentVariables: {
