@@ -5,11 +5,30 @@ phases:
       nodejs: 20
     commands:
       - npm install -g serverless
+      - npm install -g sonarqube-scanner
       - npm ci
       - npm install --save-dev serverless-offline
+  pre_build:
+    commands:
+      # Run tests and generate coverage reports
+      # - npm test -- --coverage
   build:
     commands:
-      # - npm run test
+      # Run SonarCloud scan directly in the current directory
+      - |
+        sonar-scanner \
+          -Dsonar.projectKey=${PROJECT_KEY} \
+          -Dsonar.organization=${SONAR_ORGANIZATION} \
+          -Dsonar.sources=src \
+          -Dsonar.host.url=${SONAR_HOST_URL} \
+          -Dsonar.login=${SONAR_TOKEN} \
+          -Dsonar.javascript.lcov.reportPaths=coverage/lcov.info \
+          -Dsonar.exclusions=**/node_modules/**,**/.serverless/**,**/build/** \
+          -Dsonar.qualitygate.wait=true \
+          -Dsonar.projectVersion=${ENVIRONMENT_NAME}-${CODEBUILD_BUILD_NUMBER} \
+          -Dsonar.scanner.force=true \
+          -Dsonar.scm.disabled=true \
+          -Dsonar.ci=true
       - npm run build
       - serverless package
 artifacts:

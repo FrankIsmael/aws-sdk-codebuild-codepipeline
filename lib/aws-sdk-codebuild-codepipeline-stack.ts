@@ -8,13 +8,19 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 // Load environment variables
 dotenv.config();
 
+// Define interface for environment props
+export interface PipelineStackProps extends cdk.StackProps {
+  environmentName: string; // 'prod', 'staging', 'dev'
+  branchName: string; // git branch to track
+}
+
 export class PipelineStack extends cdk.Stack {
-  constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+  constructor(scope: cdk.App, id: string, props: PipelineStackProps) {
     super(scope, id, props);
 
     // Define the pipeline
     const pipeline = new codepipeline.Pipeline(this, 'Pipeline', {
-      pipelineName: 'ServerlessPipeline',
+      pipelineName: `Serverless-${props.environmentName}-Pipeline`,
     });
 
     // Source stage
@@ -31,7 +37,7 @@ export class PipelineStack extends cdk.Stack {
       ),
       trigger: codepipeline_actions.GitHubTrigger.WEBHOOK,
       output: sourceOutput,
-      branch: process.env.GITHUB_BRANCH || 'main',
+      branch: props.branchName,
     });
 
     pipeline.addStage({
@@ -94,6 +100,26 @@ export class PipelineStack extends cdk.Stack {
           SERVERLESS_ACCESS_KEY: {
             value: process.env.SERVERLESS_ACCESS_KEY || '',
           },
+          ENVIRONMENT_NAME: {
+            value: props.environmentName,
+          },
+          // SonarCloud environment variables
+          SONAR_TOKEN: {
+            value: process.env.SONAR_TOKEN || '',
+            // type: codebuild.BuildEnvironmentVariableType.SECRETS_MANAGER,
+          },
+          SONAR_HOST_URL: {
+            value: process.env.SONAR_HOST_URL || 'https://sonarcloud.io',
+          },
+          PROJECT_KEY: {
+            value: process.env.SONAR_PROJECT_KEY,
+          },
+          PROJECT_NAME: {
+            value: process.env.SONAR_PROJECT_NAME,
+          },
+          SONAR_ORGANIZATION: {
+            value: process.env.SONAR_ORGANIZATION,
+          },
         },
       },
     });
@@ -111,6 +137,21 @@ export class PipelineStack extends cdk.Stack {
       actions: [buildAction],
     });
 
+    // Add approval action for production environment
+    if (props.environmentName === 'prod') {
+      pipeline.addStage({
+        stageName: 'Approval',
+        actions: [
+          new codepipeline_actions.ManualApprovalAction({
+            actionName: 'ApproveDeployment',
+            notificationTopic: undefined, // Optional: Add SNS topic for notifications
+            additionalInformation:
+              'Please review and approve the deployment to production',
+          }),
+        ],
+      });
+    }
+
     // Deploy stage
     const deployProject = new codebuild.PipelineProject(this, 'DeployProject', {
       role: buildProjectRole,
@@ -121,6 +162,9 @@ export class PipelineStack extends cdk.Stack {
         environmentVariables: {
           SERVERLESS_ACCESS_KEY: {
             value: process.env.SERVERLESS_ACCESS_KEY || '',
+          },
+          ENVIRONMENT_NAME: {
+            value: props.environmentName,
           },
         },
       },

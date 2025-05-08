@@ -6,8 +6,10 @@ phases:
     commands:
       - npm install -g serverless
       - npm install --save-dev serverless-offline
-      - ls -la  # Debug: list files
-      - cat serverless.yml  # Debug: verify config
+  pre_build:
+    commands:
+      - echo "Deploying to $ENVIRONMENT_NAME environment"
+      - export STAGE=$ENVIRONMENT_NAME
   build:
     commands:
-      - serverless deploy --verbose
+      - serverless deploy --stage $STAGE --verbose
